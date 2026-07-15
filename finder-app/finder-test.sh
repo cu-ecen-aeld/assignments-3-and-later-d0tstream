@@ -49,9 +49,7 @@ then
 	fi
 fi
 
-echo "Removing the old writer utility and compiling as a native application"
-make clean
-make
+# The make clean and make steps have been removed per Assignment 3 instructions.
 
 for i in $( seq 1 $NUMFILES)
 do
