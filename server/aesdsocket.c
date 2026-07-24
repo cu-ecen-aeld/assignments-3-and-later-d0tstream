@@ -14,12 +14,14 @@
 #include <errno.h>
 #include <pthread.h>
 #include <sys/queue.h>
+#include <sys/ioctl.h>
 #include <time.h>
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 #define PORT "9000"
 #define CHUNK_SIZE 1024
 
-// Assignment 8 implementation switch
+// Assignment 8/9 implementation switch
 #define USE_AESD_CHAR_DEVICE 1
 
 #if (USE_AESD_CHAR_DEVICE == 1)
@@ -83,22 +85,45 @@ void *handle_connection(void *arg) {
         if (strchr(rx_buffer, '\n') != NULL) {
             pthread_mutex_lock(&data_mutex);
             
-            // Open, write, close - done immediately
-            int file_fd = open(DATA_FILE, O_CREAT | O_APPEND | O_WRONLY, 0644);
-            if (file_fd != -1) {
-                write(file_fd, rx_buffer, rx_buffer_size);
-                close(file_fd);
-            }
-            
-            // Open, read to end, close - done immediately
-            file_fd = open(DATA_FILE, O_RDONLY);
-            if (file_fd != -1) {
-                char tx_buffer[CHUNK_SIZE];
-                ssize_t bytes_read;
-                while ((bytes_read = read(file_fd, tx_buffer, sizeof(tx_buffer))) > 0) {
-                    send(tdata->client_sockfd, tx_buffer, bytes_read, 0);
+            const char *ioctl_cmd = "AESDCHAR_IOCSEEKTO:";
+            struct aesd_seekto seekto;
+
+            // Check if this is an IOCTL command
+            if (strncmp(rx_buffer, ioctl_cmd, strlen(ioctl_cmd)) == 0 &&
+                sscanf(rx_buffer, "AESDCHAR_IOCSEEKTO:%u,%u", &seekto.write_cmd, &seekto.write_cmd_offset) == 2) {
+                
+                // Open, IOCTL, Read, Close using the SAME file descriptor!
+                int file_fd = open(DATA_FILE, O_RDWR);
+                if (file_fd != -1) {
+                    if (ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seekto) == 0) {
+                        char tx_buffer[CHUNK_SIZE];
+                        ssize_t bytes_read;
+                        while ((bytes_read = read(file_fd, tx_buffer, sizeof(tx_buffer))) > 0) {
+                            send(tdata->client_sockfd, tx_buffer, bytes_read, 0);
+                        }
+                    } else {
+                        syslog(LOG_ERR, "ioctl failed");
+                    }
+                    close(file_fd);
                 }
-                close(file_fd);
+
+            } else {
+                // It's a standard write command
+                int file_fd = open(DATA_FILE, O_CREAT | O_APPEND | O_WRONLY, 0644);
+                if (file_fd != -1) {
+                    write(file_fd, rx_buffer, rx_buffer_size);
+                    close(file_fd);
+                }
+                
+                file_fd = open(DATA_FILE, O_RDONLY);
+                if (file_fd != -1) {
+                    char tx_buffer[CHUNK_SIZE];
+                    ssize_t bytes_read;
+                    while ((bytes_read = read(file_fd, tx_buffer, sizeof(tx_buffer))) > 0) {
+                        send(tdata->client_sockfd, tx_buffer, bytes_read, 0);
+                    }
+                    close(file_fd);
+                }
             }
             
             pthread_mutex_unlock(&data_mutex);
@@ -285,7 +310,7 @@ int main(int argc, char *argv[]) {
             }
         }
         
-        // Safely clean up completed threads every loop iteration
+        // Safely clean up completed threads
         struct thread_data *tdata = SLIST_FIRST(&head);
         while (tdata != NULL) {
             struct thread_data *next = SLIST_NEXT(tdata, entries);
