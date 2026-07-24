@@ -129,7 +129,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     if (memchr(write_data, '\n', count)) {
         // If the circular buffer is full, free the oldest entry to avoid memory leak
         if (dev->buffer.full) {
-            kfree(dev->buffer.entries[dev->buffer.in_offs].buffptr);
+            kfree(dev->buffer.entry[dev->buffer.in_offs].buffptr);
         }
         
         aesd_circular_buffer_add_entry(&dev->buffer, &dev->partial_entry);
