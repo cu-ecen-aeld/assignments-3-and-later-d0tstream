@@ -1,12 +1,15 @@
 /*
  * aesdchar.h
  *
- *  Created on: Oct 23, 2019
- *      Author: Dan Walkes
+ * Created on: Oct 23, 2019
+ * Author: Dan Walkes
  */
 
 #ifndef AESD_CHAR_DRIVER_AESDCHAR_H_
 #define AESD_CHAR_DRIVER_AESDCHAR_H_
+
+#include "aesd-circular-buffer.h"
+#include <linux/mutex.h>
 
 #define AESD_DEBUG 1  //Remove comment on this line to enable debug
 
@@ -25,11 +28,10 @@
 
 struct aesd_dev
 {
-    /**
-     * TODO: Add structure(s) and locks needed to complete assignment requirements
-     */
+    struct aesd_circular_buffer buffer;
+    struct aesd_buffer_entry partial_entry; // Holds unterminated writes
+    struct mutex lock;                      // Concurrency protection
     struct cdev cdev;     /* Char device structure      */
 };
-
 
 #endif /* AESD_CHAR_DRIVER_AESDCHAR_H_ */

@@ -17,8 +17,16 @@
 #include <time.h>
 
 #define PORT "9000"
-#define DATA_FILE "/var/tmp/aesdsocketdata"
 #define CHUNK_SIZE 1024
+
+// Assignment 8 implementation switch
+#define USE_AESD_CHAR_DEVICE 1
+
+#if (USE_AESD_CHAR_DEVICE == 1)
+    #define DATA_FILE "/dev/aesdchar"
+#else
+    #define DATA_FILE "/var/tmp/aesdsocketdata"
+#endif
 
 int server_sockfd = -1;
 volatile sig_atomic_t caught_sig = 0;
@@ -75,12 +83,14 @@ void *handle_connection(void *arg) {
         if (strchr(rx_buffer, '\n') != NULL) {
             pthread_mutex_lock(&data_mutex);
             
+            // Open, write, close - done immediately
             int file_fd = open(DATA_FILE, O_CREAT | O_APPEND | O_WRONLY, 0644);
             if (file_fd != -1) {
                 write(file_fd, rx_buffer, rx_buffer_size);
                 close(file_fd);
             }
             
+            // Open, read to end, close - done immediately
             file_fd = open(DATA_FILE, O_RDONLY);
             if (file_fd != -1) {
                 char tx_buffer[CHUNK_SIZE];
@@ -110,6 +120,7 @@ void *handle_connection(void *arg) {
     return NULL;
 }
 
+#if (USE_AESD_CHAR_DEVICE != 1)
 void *timestamp_handler(void *arg) {
     int ticks = 0;
     while (!caught_sig) {
@@ -137,6 +148,7 @@ void *timestamp_handler(void *arg) {
     }
     return NULL;
 }
+#endif
 
 int main(int argc, char *argv[]) {
     bool daemon_mode = false;
@@ -223,8 +235,10 @@ int main(int argc, char *argv[]) {
     struct thread_list head;
     SLIST_INIT(&head);
     
+#if (USE_AESD_CHAR_DEVICE != 1)
     pthread_t timestamp_thread;
     pthread_create(&timestamp_thread, NULL, timestamp_handler, NULL);
+#endif
     
     while (!caught_sig) {
         fd_set readfds;
@@ -284,7 +298,9 @@ int main(int argc, char *argv[]) {
         }
     }
     
+#if (USE_AESD_CHAR_DEVICE != 1)
     pthread_join(timestamp_thread, NULL);
+#endif
     
     struct thread_data *tdata = SLIST_FIRST(&head);
     while (tdata != NULL) {
@@ -304,7 +320,9 @@ int main(int argc, char *argv[]) {
         close(server_sockfd);
     }
     
+#if (USE_AESD_CHAR_DEVICE != 1)
     remove(DATA_FILE);
+#endif
     closelog();
     
     return 0;
